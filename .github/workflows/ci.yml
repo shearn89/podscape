@@ -66,6 +66,9 @@ jobs:
   build:
     name: build ${{ matrix.goos }}/${{ matrix.goarch }}
     needs: [lint, test]
+    # Multi-arch matrix only runs for pushes to main and v* tags
+    # (PRs are validated by lint + test, which already compile every package).
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
