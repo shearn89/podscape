@@ -1,0 +1,26 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        # Skip the `exported` doc-comment rule — pleasant for a library, noisy
+        # for an app where every const/var being externally documented is
+        # overkill. The substantive style checks below stay on.
+        - name: var-naming
+        - name: indent-error-flow
+        - name: blank-imports
+        - name: range-val-in-closure
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
