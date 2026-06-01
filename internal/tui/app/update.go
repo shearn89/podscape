@@ -106,10 +106,10 @@ func (m Model) onFloorPlanKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// by the scroll-to-focus logic, so they return early.
 	switch {
 	case key.Matches(msg, k.ScrollUp):
-		m.plan.HalfViewUp()
+		m.plan.HalfPageUp()
 		return m, nil
 	case key.Matches(msg, k.ScrollDown):
-		m.plan.HalfViewDown()
+		m.plan.HalfPageDown()
 		return m, nil
 	case key.Matches(msg, k.ScrollTop):
 		m.plan.GotoTop()
