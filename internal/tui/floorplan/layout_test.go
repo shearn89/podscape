@@ -90,6 +90,74 @@ func TestFocusableNodes_OrderedByGroupThenName(t *testing.T) {
 	}
 }
 
+func TestFocusTargets_ExpandedYieldsOneStopPerNode(t *testing.T) {
+	v := View{Snapshot: snapshot()}
+	got := FocusTargets(v)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 focus targets, got %d", len(got))
+	}
+	for i, want := range []string{"ip-10-0-1-12", "ip-10-0-1-37"} {
+		if got[i].Node != want {
+			t.Errorf("FocusTargets[%d].Node = %q want %q", i, got[i].Node, want)
+		}
+	}
+}
+
+func TestFocusTargets_CollapsedGroupCollapsesToHeaderStop(t *testing.T) {
+	v := View{Snapshot: snapshot(), Collapsed: map[string]bool{"karpenter:system": true}}
+	got := FocusTargets(v)
+	if len(got) != 1 {
+		t.Fatalf("collapsed group should yield a single focus target, got %d", len(got))
+	}
+	if got[0].Node != "" {
+		t.Errorf("collapsed focus target should be the header (empty Node), got %q", got[0].Node)
+	}
+	if got[0].GroupKey != "karpenter:system" {
+		t.Errorf("collapsed focus target group = %q want karpenter:system", got[0].GroupKey)
+	}
+}
+
+func TestRenderPlan_CollapsedGroupHidesNodeCards(t *testing.T) {
+	snap := snapshot()
+	v := View{
+		Snapshot:  snap,
+		Overhead:  analysis.DaemonSetOverhead(snap.Nodes, snap.Pods),
+		Density:   DensityNormal,
+		Width:     120,
+		Collapsed: map[string]bool{"karpenter:system": true},
+	}
+	content, starts := RenderPlan(v)
+	clean := stripANSI(content)
+	if strings.Contains(clean, "ip-10-0-1-12") || strings.Contains(clean, "ip-10-0-1-37") {
+		t.Errorf("collapsed group still rendered node cards:\n%s", clean)
+	}
+	if !strings.Contains(clean, "2 nodes") {
+		t.Errorf("collapsed header should summarise node count:\n%s", clean)
+	}
+	if len(starts) != 1 {
+		t.Errorf("expected one focus offset for the collapsed header, got %d", len(starts))
+	}
+}
+
+func TestRenderPlan_OffsetsAlignWithFocusTargets(t *testing.T) {
+	snap := snapshot()
+	v := View{
+		Snapshot: snap,
+		Overhead: analysis.DaemonSetOverhead(snap.Nodes, snap.Pods),
+		Density:  DensityWide, // 40-col cards
+		Width:    50,          // forces one card per row, so cards stack vertically
+	}
+	_, starts := RenderPlan(v)
+	targets := FocusTargets(v)
+	if len(starts) != len(targets) {
+		t.Fatalf("offsets (%d) and focus targets (%d) must be 1:1", len(starts), len(targets))
+	}
+	// Single-column layout: the second card must start strictly below the first.
+	if starts[1] <= starts[0] {
+		t.Errorf("stacked cards should have increasing offsets, got %v", starts)
+	}
+}
+
 func TestDensityCardWidthsAreOrdered(t *testing.T) {
 	if DensityCompact.CardWidth() >= DensityNormal.CardWidth() ||
 		DensityNormal.CardWidth() >= DensityWide.CardWidth() {

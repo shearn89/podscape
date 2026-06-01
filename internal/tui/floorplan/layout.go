@@ -22,18 +22,65 @@ type View struct {
 	Width        int
 	FocusedNode  string          // optional; empty for "no focus"
 	FlaggedNodes map[string]bool // nodes with at least one finding — header gets a ⚠
+	Collapsed    map[string]bool // group key -> collapsed (body hidden)
+	FocusedGroup string          // group key whose collapsed header is focused
+}
+
+// FocusTarget is one stop in the floor-plan's focus ring. A target is either a
+// node (Node set) or the header of a collapsed group (Node empty), so the user
+// can land on a collapsed group and re-expand it.
+type FocusTarget struct {
+	GroupKey string
+	Node     string // "" => the group's (collapsed) header itself
 }
 
 // Render produces the full floor-plan string for the given view.
 func Render(v View) string {
+	content, _ := RenderPlan(v)
+	return content + "\n"
+}
+
+// RenderPlan produces the floor-plan string together with the starting line of
+// every focus target (in FocusTargets order). The line offsets let the app
+// scroll a viewport so the focused target stays in view.
+func RenderPlan(v View) (string, []int) {
 	if v.Snapshot == nil || len(v.Snapshot.Groups) == 0 {
-		return styles.Help.Render("(no nodes — is the cluster empty or unreachable?)")
+		return styles.Help.Render("(no nodes — is the cluster empty or unreachable?)"), nil
 	}
 	parts := make([]string, 0, len(v.Snapshot.Groups))
+	var starts []int
+	cum := 0
 	for _, g := range v.Snapshot.Groups {
-		parts = append(parts, renderGroup(g, v.Snapshot.Pods, v.Overhead, v.Density, v.Width, v.FocusedNode, v.FlaggedNodes))
+		collapsed := v.Collapsed[g.Group.Key]
+		groupFocused := collapsed && v.FocusedGroup == g.Group.Key
+		block, offsets := renderGroup(g, v.Snapshot.Pods, v.Overhead, v.Density, v.Width, v.FocusedNode, v.FlaggedNodes, collapsed, groupFocused)
+		for _, off := range offsets {
+			starts = append(starts, cum+off)
+		}
+		parts = append(parts, block)
+		cum += lipgloss.Height(block)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, parts...) + "\n"
+	return lipgloss.JoinVertical(lipgloss.Left, parts...), starts
+}
+
+// FocusTargets returns the ordered focus ring: nodes of expanded groups, plus a
+// single header stop for each collapsed group. Order matches RenderPlan's line
+// offsets one-for-one.
+func FocusTargets(v View) []FocusTarget {
+	if v.Snapshot == nil {
+		return nil
+	}
+	var out []FocusTarget
+	for _, g := range v.Snapshot.Groups {
+		if v.Collapsed[g.Group.Key] {
+			out = append(out, FocusTarget{GroupKey: g.Group.Key})
+			continue
+		}
+		for _, n := range g.Nodes {
+			out = append(out, FocusTarget{GroupKey: g.Group.Key, Node: n.Name})
+		}
+	}
+	return out
 }
 
 // FocusableNodes returns the ordered list of node names a user can move focus

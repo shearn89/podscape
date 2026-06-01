@@ -22,6 +22,11 @@ type keyMap struct {
 	Normal      key.Binding
 	Wide        key.Binding
 	SortNext    key.Binding
+	Collapse    key.Binding
+	ScrollUp    key.Binding
+	ScrollDown  key.Binding
+	ScrollTop   key.Binding
+	ScrollBot   key.Binding
 }
 
 func defaultKeys() keyMap {
@@ -43,17 +48,23 @@ func defaultKeys() keyMap {
 		Normal:      key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "normal")),
 		Wide:        key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wide")),
 		SortNext:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort column")),
+		Collapse:    key.NewBinding(key.WithKeys("x", " "), key.WithHelp("x/space", "collapse group")),
+		ScrollUp:    key.NewBinding(key.WithKeys("pgup", "ctrl+u"), key.WithHelp("pgup", "scroll up")),
+		ScrollDown:  key.NewBinding(key.WithKeys("pgdown", "ctrl+d"), key.WithHelp("pgdn", "scroll down")),
+		ScrollTop:   key.NewBinding(key.WithKeys("home", "g"), key.WithHelp("g", "top")),
+		ScrollBot:   key.NewBinding(key.WithKeys("end", "G"), key.WithHelp("G", "bottom")),
 	}
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.NextTab, k.Enter, k.Refresh, k.Compact, k.Normal, k.Wide, k.Help, k.Quit}
+	return []key.Binding{k.NextTab, k.Enter, k.Collapse, k.Refresh, k.Compact, k.Normal, k.Wide, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.TabPlan, k.TabTable, k.TabFindings, k.NextTab},
 		{k.Up, k.Down, k.Left, k.Right, k.Enter, k.Esc},
+		{k.Collapse, k.ScrollUp, k.ScrollDown, k.ScrollTop, k.ScrollBot},
 		{k.Compact, k.Normal, k.Wide, k.SortNext},
 		{k.Refresh, k.Help, k.Quit},
 	}
