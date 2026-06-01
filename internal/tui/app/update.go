@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shearn89/podscape/internal/analysis"
 	"github.com/shearn89/podscape/internal/tui/floorplan"
@@ -17,6 +18,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.rebuildTable()
+		m.syncPlan()
 		return m, nil
 
 	case loadedMsg:
@@ -32,6 +34,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				len(msg.snap.Nodes), len(msg.snap.Pods), time.Now().Format("15:04:05"))
 			m.rebuildTable()
 			m.clampFocus()
+			m.syncPlan()
 		}
 		return m, nil
 
@@ -58,6 +61,7 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, k.Help):
 		m.help.ShowAll = !m.help.ShowAll
+		m.syncPlan()
 		return m, nil
 	case key.Matches(msg, k.Refresh):
 		m.statusMsg = "refreshing…"
@@ -76,12 +80,15 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, k.Compact):
 		m.density = floorplan.DensityCompact
+		m.syncPlan()
 		return m, nil
 	case key.Matches(msg, k.Normal):
 		m.density = floorplan.DensityNormal
+		m.syncPlan()
 		return m, nil
 	case key.Matches(msg, k.Wide):
 		m.density = floorplan.DensityWide
+		m.syncPlan()
 		return m, nil
 	}
 
@@ -93,11 +100,39 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) onFloorPlanKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := m.keys
-	focusable := floorplan.FocusableNodes(m.currentView())
+	targets := floorplan.FocusTargets(m.currentView())
+
+	// Manual scroll keys move the viewport directly and must not be overridden
+	// by the scroll-to-focus logic, so they return early.
 	switch {
+	case key.Matches(msg, k.ScrollUp):
+		m.plan.HalfViewUp()
+		return m, nil
+	case key.Matches(msg, k.ScrollDown):
+		m.plan.HalfViewDown()
+		return m, nil
+	case key.Matches(msg, k.ScrollTop):
+		m.plan.GotoTop()
+		return m, nil
+	case key.Matches(msg, k.ScrollBot):
+		m.plan.GotoBottom()
+		return m, nil
+	}
+
+	switch {
+	case key.Matches(msg, k.Collapse):
+		if m.focusIdx >= 0 && m.focusIdx < len(targets) {
+			m.toggleCollapse(targets[m.focusIdx].GroupKey)
+		}
 	case key.Matches(msg, k.Enter):
-		if len(focusable) > 0 {
-			m.showDetail = true
+		if m.focusIdx >= 0 && m.focusIdx < len(targets) {
+			t := targets[m.focusIdx]
+			if t.Node != "" {
+				m.showDetail = true
+			} else {
+				// A collapsed group header is focused — Enter expands it.
+				m.toggleCollapse(t.GroupKey)
+			}
 		}
 	case key.Matches(msg, k.Esc):
 		m.showDetail = false
@@ -106,11 +141,38 @@ func (m Model) onFloorPlanKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focusIdx--
 		}
 	case key.Matches(msg, k.Down), key.Matches(msg, k.Right):
-		if m.focusIdx < len(focusable)-1 {
+		if m.focusIdx < len(targets)-1 {
 			m.focusIdx++
 		}
 	}
+	m.syncPlan()
 	return m, nil
+}
+
+// toggleCollapse flips the collapsed state of a group and keeps focus on it so
+// the user doesn't lose their place as the focus ring changes shape.
+func (m *Model) toggleCollapse(groupKey string) {
+	if groupKey == "" {
+		return
+	}
+	if m.collapsed[groupKey] {
+		delete(m.collapsed, groupKey)
+	} else {
+		m.collapsed[groupKey] = true
+		m.showDetail = false
+	}
+	m.refocusGroup(groupKey)
+}
+
+// refocusGroup points focus at the first focus target belonging to groupKey.
+func (m *Model) refocusGroup(groupKey string) {
+	for i, t := range floorplan.FocusTargets(m.currentView()) {
+		if t.GroupKey == groupKey {
+			m.focusIdx = i
+			return
+		}
+	}
+	m.clampFocus()
 }
 
 func (m Model) onTableKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -133,7 +195,7 @@ func (m *Model) rebuildTable() {
 }
 
 func (m *Model) clampFocus() {
-	max := len(floorplan.FocusableNodes(m.currentView())) - 1
+	max := len(floorplan.FocusTargets(m.currentView())) - 1
 	if m.focusIdx > max {
 		m.focusIdx = max
 	}
@@ -143,16 +205,37 @@ func (m *Model) clampFocus() {
 }
 
 func (m Model) currentView() floorplan.View {
-	focusName := ""
-	if m.snap != nil {
-		names := floorplan.FocusableNodes(floorplan.View{Snapshot: m.snap})
-		if m.focusIdx >= 0 && m.focusIdx < len(names) {
-			focusName = names[m.focusIdx]
-		}
-	}
+	return m.planViewWidth(m.planWidth())
+}
+
+// planWidth is the width available to the floor plan, shrunk when the detail
+// pane is open so the two sit side by side.
+func (m Model) planWidth() int {
 	w := m.width
+	if m.showDetail && m.snap != nil {
+		detailWidth := 46
+		if m.width > 0 && detailWidth > m.width/2 {
+			detailWidth = m.width / 2
+		}
+		w = m.width - detailWidth - 2
+	}
 	if w < 60 {
 		w = 60
+	}
+	return w
+}
+
+// planViewWidth builds the floorplan.View, resolving the focused target into a
+// node name or a collapsed-group key for highlighting.
+func (m Model) planViewWidth(w int) floorplan.View {
+	targets := floorplan.FocusTargets(floorplan.View{Snapshot: m.snap, Collapsed: m.collapsed})
+	focusName, focusGroup := "", ""
+	if m.focusIdx >= 0 && m.focusIdx < len(targets) {
+		t := targets[m.focusIdx]
+		focusName = t.Node
+		if t.Node == "" {
+			focusGroup = t.GroupKey
+		}
 	}
 	return floorplan.View{
 		Snapshot:     m.snap,
@@ -160,7 +243,54 @@ func (m Model) currentView() floorplan.View {
 		Density:      m.density,
 		Width:        w,
 		FocusedNode:  focusName,
+		FocusedGroup: focusGroup,
 		FlaggedNodes: m.flaggedNodes,
+		Collapsed:    m.collapsed,
+	}
+}
+
+// syncPlan re-renders the floor plan into the viewport, resizes it to fit the
+// space left by the title/status/help chrome, and scrolls so the focused target
+// stays visible.
+func (m *Model) syncPlan() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	w := m.planWidth()
+	content, starts := floorplan.RenderPlan(m.planViewWidth(w))
+
+	m.plan.Width = w
+	h := m.height - m.chromeHeight()
+	if h < 1 {
+		h = 1
+	}
+	m.plan.Height = h
+	m.plan.SetContent(content)
+	m.planReady = true
+
+	if m.focusIdx >= 0 && m.focusIdx < len(starts) {
+		m.scrollToLine(starts[m.focusIdx])
+	}
+}
+
+// chromeHeight is the number of rows consumed by everything except the floor
+// plan: the title bar, status line, and help footer.
+func (m Model) chromeHeight() int {
+	return lipgloss.Height(m.renderTitle()) +
+		lipgloss.Height(m.renderStatus()) +
+		lipgloss.Height(m.help.View(m.keys))
+}
+
+// scrollToLine nudges the viewport so the given content line is on screen,
+// keeping a little context when it lands below the fold.
+func (m *Model) scrollToLine(line int) {
+	top := m.plan.YOffset
+	bottom := top + m.plan.Height
+	switch {
+	case line < top:
+		m.plan.SetYOffset(line)
+	case line >= bottom-1:
+		m.plan.SetYOffset(line - m.plan.Height/2)
 	}
 }
 

@@ -38,6 +38,10 @@ to it. The **Findings** tab lists them.
   with a live `DS cpu N%  mem N%` overhead bar.
 - **Three density modes** – `c` compact, `n` normal, `w` wide. Cards reflow
   into more or fewer columns automatically as the terminal resizes.
+- **Scrollable, collapsible plan** – the floor plan scrolls when it outgrows the
+  terminal (`pgup`/`pgdn`, `g`/`G`, or just move focus and it follows), and any
+  node group can be collapsed to a one-line header with `x`/`space` to tuck away
+  the clusters you aren't looking at.
 - **Sortable Nodes tab** – `2` for a Bubbles table you can sort by node /
   group / DS pod count / CPU% / MEM% (`s` cycles the column).
 - **Findings tab** – `3` lists every correctness issue with severity, code,
@@ -76,8 +80,11 @@ make build                       # bin/podscape
 1/2/3   switch tab (floor plan / nodes table / findings)
 tab     next tab
 c/n/w   density: compact / normal / wide
-arrows  move focus between node cards
-enter   open detail pane     esc   close
+arrows  move focus between node cards (the plan scrolls to follow)
+x/space collapse / expand the focused node group
+pgup/pgdn   scroll the floor plan   (ctrl+u / ctrl+d)
+g/G     jump to top / bottom of the floor plan
+enter   open detail pane (or expand a collapsed group)   esc   close
 s       cycle sort column (nodes table)
 r       refresh now
 ?       toggle full help

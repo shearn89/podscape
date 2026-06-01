@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"k8s.io/client-go/kubernetes"
 
@@ -44,6 +45,10 @@ type Model struct {
 	sortKey    nodestable.SortKey
 	statusMsg  string
 
+	plan      viewport.Model // scrollable container for the floor plan
+	planReady bool
+	collapsed map[string]bool // group key -> collapsed (body hidden)
+
 	snap         *k8s.Snapshot
 	overhead     map[string]analysis.NodeOverhead
 	loadErr      error
@@ -65,6 +70,7 @@ func New(cs kubernetes.Interface, ctxName, namespace string, refresh time.Durati
 		help:      h,
 		density:   floorplan.DensityNormal,
 		statusMsg: "loading…",
+		collapsed: map[string]bool{},
 	}
 }
 
