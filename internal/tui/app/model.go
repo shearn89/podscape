@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/shearn89/podscape/internal/analysis"
+	"github.com/shearn89/podscape/internal/config"
 	"github.com/shearn89/podscape/internal/k8s"
 	"github.com/shearn89/podscape/internal/tui/floorplan"
 	"github.com/shearn89/podscape/internal/tui/nodestable"
@@ -25,6 +26,19 @@ const (
 	tabNodesTable
 	tabFindings
 )
+
+// tabFromView maps a config default_view name onto a tab. config validates the
+// name, so the default arm is just a safety net.
+func tabFromView(view string) tab {
+	switch view {
+	case config.ViewNodes:
+		return tabNodesTable
+	case config.ViewFindings:
+		return tabFindings
+	default:
+		return tabFloorPlan
+	}
+}
 
 // Model is the root tea.Model.
 type Model struct {
@@ -49,6 +63,10 @@ type Model struct {
 	planReady bool
 	collapsed map[string]bool // group key -> collapsed (body hidden)
 
+	accordion         bool // only the focused group stays expanded
+	collapseByDefault bool // seed every group collapsed on first load
+	groupsInit        bool // guards the one-time collapse/accordion seeding
+
 	snap         *k8s.Snapshot
 	overhead     map[string]analysis.NodeOverhead
 	loadErr      error
@@ -57,20 +75,25 @@ type Model struct {
 	flaggedNodes map[string]bool
 }
 
-// New returns a fresh root model ready for tea.NewProgram.
-func New(cs kubernetes.Interface, ctxName, namespace string, refresh time.Duration) Model {
+// New returns a fresh root model ready for tea.NewProgram. cfg supplies the
+// user's defaults (opening tab, collapse/accordion behaviour); the theme is
+// applied separately in main before the program starts.
+func New(cs kubernetes.Interface, ctxName, namespace string, refresh time.Duration, cfg config.Config) Model {
 	h := help.New()
 	h.ShowAll = false
 	return Model{
-		cs:        cs,
-		ctxName:   ctxName,
-		namespace: namespace,
-		refresh:   refresh,
-		keys:      defaultKeys(),
-		help:      h,
-		density:   floorplan.DensityNormal,
-		statusMsg: "loading…",
-		collapsed: map[string]bool{},
+		cs:                cs,
+		ctxName:           ctxName,
+		namespace:         namespace,
+		refresh:           refresh,
+		keys:              defaultKeys(),
+		help:              h,
+		tab:               tabFromView(cfg.DefaultView),
+		density:           floorplan.DensityNormal,
+		statusMsg:         "loading…",
+		collapsed:         map[string]bool{},
+		accordion:         cfg.Accordion,
+		collapseByDefault: cfg.GroupsCollapsed,
 	}
 }
 

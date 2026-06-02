@@ -33,6 +33,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("loaded %d nodes / %d pods at %s",
 				len(msg.snap.Nodes), len(msg.snap.Pods), time.Now().Format("15:04:05"))
 			m.rebuildTable()
+			m.seedGroups()
 			m.clampFocus()
 			m.syncPlan()
 		}
@@ -90,6 +91,16 @@ func (m Model) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.density = floorplan.DensityWide
 		m.syncPlan()
 		return m, nil
+	case key.Matches(msg, k.Accordion):
+		m.accordion = !m.accordion
+		if m.accordion {
+			m.enforceAccordion()
+		} else {
+			// Leaving accordion mode reveals everything again.
+			m.collapsed = map[string]bool{}
+		}
+		m.syncPlan()
+		return m, nil
 	}
 
 	if m.tab == tabFloorPlan {
@@ -139,14 +150,67 @@ func (m Model) onFloorPlanKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, k.Up), key.Matches(msg, k.Left):
 		if m.focusIdx > 0 {
 			m.focusIdx--
+			m.enforceAccordion()
 		}
 	case key.Matches(msg, k.Down), key.Matches(msg, k.Right):
 		if m.focusIdx < len(targets)-1 {
 			m.focusIdx++
+			m.enforceAccordion()
 		}
 	}
 	m.syncPlan()
 	return m, nil
+}
+
+// seedGroups applies the configured collapse/accordion defaults once, on the
+// first snapshot. It's guarded so periodic refreshes don't undo the user's
+// later expand/collapse actions.
+func (m *Model) seedGroups() {
+	if m.groupsInit || m.snap == nil {
+		return
+	}
+	m.groupsInit = true
+	if m.collapseByDefault {
+		for _, g := range m.snap.Groups {
+			m.collapsed[g.Group.Key] = true
+		}
+	}
+	m.enforceAccordion()
+}
+
+// enforceAccordion, when accordion mode is on, keeps exactly one group expanded:
+// the one owning the focused target. Everything else collapses. When this
+// actually changes which group is open, focus is re-pointed at that group so
+// the user lands on its first node rather than an out-of-range index. Navigating
+// within the already-open group is a no-op, so focus isn't yanked around.
+func (m *Model) enforceAccordion() {
+	if !m.accordion || m.snap == nil {
+		return
+	}
+	targets := floorplan.FocusTargets(m.currentView())
+	focusKey := ""
+	if m.focusIdx >= 0 && m.focusIdx < len(targets) {
+		focusKey = targets[m.focusIdx].GroupKey
+	}
+	if focusKey == "" {
+		return
+	}
+	changed := false
+	for _, g := range m.snap.Groups {
+		key := g.Group.Key
+		if key == focusKey {
+			if m.collapsed[key] {
+				delete(m.collapsed, key)
+				changed = true
+			}
+		} else if !m.collapsed[key] {
+			m.collapsed[key] = true
+			changed = true
+		}
+	}
+	if changed {
+		m.refocusGroup(focusKey)
+	}
 }
 
 // toggleCollapse flips the collapsed state of a group and keeps focus on it so

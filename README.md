@@ -72,6 +72,31 @@ make build                       # bin/podscape
 ./bin/podscape --context prod    # skip the picker
 ./bin/podscape -n kube-system    # scope pod listing to a namespace
 ./bin/podscape --refresh 5s      # tighter refresh interval
+./bin/podscape --config ./my.toml  # use a specific config file
+```
+
+## Configuration
+
+podscape reads an optional TOML config from
+`<user-config-dir>/podscape/config.toml` (e.g. `~/.config/podscape/config.toml`
+on Linux), or from `--config <path>`. A missing file is fine — the defaults
+below apply. CLI flags are unaffected by the config; it only sets the
+preferences that don't otherwise have flags.
+
+```toml
+# Which tab opens first: "floorplan" | "nodes" | "findings".
+default_view = "floorplan"
+
+# Start every node group collapsed on the floor plan.
+groups_collapsed = false
+
+# Accordion mode: keep only the focused node group expanded, collapsing the
+# rest as you move between them. Toggle live with the `a` key.
+accordion = false
+
+# Colour scheme: "auto" detects the terminal's light/dark background and picks
+# a readable theme; "dark" and "light" force one.
+theme = "auto"
 ```
 
 ## Keys
@@ -82,6 +107,7 @@ tab     next tab
 c/n/w   density: compact / normal / wide
 arrows  move focus between node cards (the plan scrolls to follow)
 x/space collapse / expand the focused node group
+a       toggle accordion mode (only the focused group stays expanded)
 pgup/pgdn   scroll the floor plan   (ctrl+u / ctrl+d)
 g/G     jump to top / bottom of the floor plan
 enter   open detail pane (or expand a collapsed group)   esc   close
