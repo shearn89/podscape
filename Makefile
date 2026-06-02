@@ -56,9 +56,9 @@ lint: lint-install ## golangci-lint run
 	$(GOLANGCI_LINT) run $(PKG)
 
 lint-install:
-	@if [ ! -x "$(GOLANGCI_LINT)" ]; then \
-		echo "installing golangci-lint…"; \
-		go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
+	@if [ ! -x "$(GOLANGCI_LINT)" ] || ! "$(GOLANGCI_LINT)" version 2>/dev/null | grep -q "version 2"; then \
+		echo "installing golangci-lint v2…"; \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest; \
 	fi
 
 staticcheck: staticcheck-install ## staticcheck
