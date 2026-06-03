@@ -21,15 +21,31 @@ import (
 // own top) of each focus target it contains — one entry per node when expanded,
 // or a single entry for the header when collapsed.
 func renderGroup(g k8s.GroupedNodes, pods []model.Pod, overhead map[string]analysis.NodeOverhead, d Density, availWidth int, focusedNode string, flagged map[string]bool, collapsed, groupFocused bool) (string, []int) {
-	cardW := d.CardWidth()
+	baseW := d.CardWidth()
 	gap := 1
 	innerWidth := availWidth - 4 // outer border + padding
-	if innerWidth < cardW {
-		innerWidth = cardW
+	if innerWidth < baseW {
+		innerWidth = baseW
 	}
-	cols := (innerWidth + gap) / (cardW + gap)
+	// The density sets the *baseline* card width, which decides how many cards
+	// fit per row. We never use more columns than there are nodes, then grow
+	// each card to absorb the row's spare width so names get more room on wide
+	// terminals instead of leaving dead space to the right.
+	cols := (innerWidth + gap) / (baseW + gap)
 	if cols < 1 {
 		cols = 1
+	}
+	if len(g.Nodes) > 0 && cols > len(g.Nodes) {
+		cols = len(g.Nodes)
+	}
+	cardW := (innerWidth+gap)/cols - gap
+	// Cap growth so a sparse group doesn't stretch a card across the whole
+	// screen; 2× the baseline is plenty of room for long node/pod names.
+	if maxW := baseW * 2; cardW > maxW {
+		cardW = maxW
+	}
+	if cardW < baseW {
+		cardW = baseW
 	}
 
 	header := renderGroupHeader(g, collapsed, groupFocused)
@@ -42,7 +58,7 @@ func renderGroup(g k8s.GroupedNodes, pods []model.Pod, overhead map[string]analy
 
 	cards := make([]string, 0, len(g.Nodes))
 	for _, n := range g.Nodes {
-		cards = append(cards, renderNodeCard(n, model.PodsOnNode(pods, n.Name), overhead[n.Name], d, n.Name == focusedNode, flagged[n.Name]))
+		cards = append(cards, renderNodeCard(n, model.PodsOnNode(pods, n.Name), overhead[n.Name], d, cardW, n.Name == focusedNode, flagged[n.Name]))
 	}
 
 	body, rowStarts := gridRows(cards, cols)

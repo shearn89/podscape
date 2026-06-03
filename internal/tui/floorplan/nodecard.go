@@ -15,13 +15,13 @@ import (
 // renderNodeCard returns the rendered string for one node card at the given
 // density, optionally focused. Pods running on the node are split into a
 // workload band (top) and a DaemonSet band (bottom) per the sketch.
-func renderNodeCard(node model.Node, pods []model.Pod, overhead analysis.NodeOverhead, d Density, focused, flagged bool) string {
-	cardW := d.CardWidth()
+func renderNodeCard(node model.Node, pods []model.Pod, overhead analysis.NodeOverhead, d Density, cardW int, focused, flagged bool) string {
 	inner := cardW - 4 // borders + padding
+	chipW := effectiveChipWidth(d, inner)
 
 	header := renderHeader(node, inner, flagged)
-	workloadBand := renderWorkloadBand(pods, d, inner)
-	dsBand := renderDSBand(pods, overhead, d, inner)
+	workloadBand := renderWorkloadBand(pods, d, inner, chipW)
+	dsBand := renderDSBand(pods, overhead, d, inner, chipW)
 
 	body := lipgloss.JoinVertical(lipgloss.Left, header, workloadBand, dsBand)
 
@@ -51,17 +51,17 @@ func renderHeader(node model.Node, width int, flagged bool) string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, subline)
 }
 
-func renderWorkloadBand(pods []model.Pod, d Density, width int) string {
-	chips := chipsFor(pods, d, false)
+func renderWorkloadBand(pods []model.Pod, d Density, width, chipW int) string {
+	chips := chipsFor(pods, d, false, chipW)
 	if len(chips) == 0 {
 		return styles.NodeSub.Render("(no app pods)")
 	}
-	return wrapChips(chips, width, d.PodChipWidth())
+	return wrapChips(chips, width, chipW)
 }
 
-func renderDSBand(pods []model.Pod, overhead analysis.NodeOverhead, d Density, width int) string {
+func renderDSBand(pods []model.Pod, overhead analysis.NodeOverhead, d Density, width, chipW int) string {
 	divider := strings.Repeat("─", width)
-	chips := chipsFor(pods, d, true)
+	chips := chipsFor(pods, d, true, chipW)
 	var pct string
 	if overhead.DaemonSetPods > 0 {
 		pct = styles.NodeSub.Render(fmt.Sprintf("DS cpu %.0f%%  mem %.0f%%",
@@ -69,7 +69,7 @@ func renderDSBand(pods []model.Pod, overhead analysis.NodeOverhead, d Density, w
 	} else {
 		pct = styles.NodeSub.Render("DS —")
 	}
-	chipRow := wrapChips(chips, width, d.PodChipWidth())
+	chipRow := wrapChips(chips, width, chipW)
 	if chipRow == "" {
 		chipRow = styles.NodeSub.Render("(no DS pods)")
 	}
@@ -82,7 +82,7 @@ func renderDSBand(pods []model.Pod, overhead analysis.NodeOverhead, d Density, w
 
 // chipsFor returns one chip per pod. When daemonset is true, only DaemonSet
 // pods are included; otherwise only non-DaemonSet pods.
-func chipsFor(pods []model.Pod, d Density, daemonset bool) []string {
+func chipsFor(pods []model.Pod, d Density, daemonset bool, chipW int) []string {
 	filtered := make([]model.Pod, 0, len(pods))
 	for _, p := range pods {
 		isDS := p.Owner.Kind == model.KindDaemonSet
@@ -97,11 +97,10 @@ func chipsFor(pods []model.Pod, d Density, daemonset bool) []string {
 		}
 		return filtered[i].Name < filtered[j].Name
 	})
-	chipW := d.PodChipWidth()
 	out := make([]string, 0, len(filtered))
 	for _, p := range filtered {
 		colour := model.ColorFor(p.Owner)
-		label := chipLabel(p, d)
+		label := chipLabel(p, d, chipW)
 		style := styles.PodChip.
 			Background(colour).
 			Width(chipW)
@@ -110,15 +109,36 @@ func chipsFor(pods []model.Pod, d Density, daemonset bool) []string {
 	return out
 }
 
-func chipLabel(p model.Pod, d Density) string {
+func chipLabel(p model.Pod, d Density, chipW int) string {
 	switch d {
 	case DensityCompact:
 		return initials(p.Owner.Name)
 	case DensityWide:
-		return truncate(p.Name, d.PodChipWidth()-2)
+		return truncate(p.Name, chipW-2)
 	default:
-		return truncate(p.Owner.Name, d.PodChipWidth()-2)
+		return truncate(p.Owner.Name, chipW-2)
 	}
+}
+
+// effectiveChipWidth scales a pod chip so chips keep filling the (possibly
+// widened) card. Compact stays tiny — it shows initials, so extra width would
+// just be padding. Normal/Wide preserve the density's chips-per-row feel, then
+// let each chip absorb the card's spare width so labels grow on big screens.
+func effectiveChipWidth(d Density, inner int) int {
+	base := d.PodChipWidth()
+	if d == DensityCompact {
+		return base
+	}
+	baseInner := d.CardWidth() - 4
+	perRow := baseInner / (base + 1)
+	if perRow < 1 {
+		perRow = 1
+	}
+	w := (inner - (perRow - 1)) / perRow
+	if w < base {
+		w = base
+	}
+	return w
 }
 
 func initials(s string) string {
