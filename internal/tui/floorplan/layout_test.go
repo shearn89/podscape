@@ -158,6 +158,34 @@ func TestRenderPlan_OffsetsAlignWithFocusTargets(t *testing.T) {
 	}
 }
 
+func TestRender_WiderTerminalShowsLongerNames(t *testing.T) {
+	longName := "ip-10-0-1-12.eu-west-2.compute.internal"
+	g := model.NodeGroup{Key: "karpenter:system", DisplayName: "system", Provider: model.ProviderKarpenter}
+	n := model.Node{Name: longName, InstanceType: "m5.large", Group: g, Ready: true}
+	snap := &k8s.Snapshot{
+		Nodes:  []model.Node{n},
+		Groups: []k8s.GroupedNodes{{Group: g, Nodes: []model.Node{n}}},
+	}
+	view := func(width int) string {
+		return stripANSI(Render(View{
+			Snapshot: snap,
+			Overhead: analysis.DaemonSetOverhead(snap.Nodes, snap.Pods),
+			Density:  DensityNormal,
+			Width:    width,
+		}))
+	}
+
+	narrow := view(30)
+	wide := view(120)
+
+	if strings.Contains(narrow, longName) {
+		t.Errorf("expected the long node name to be truncated on a narrow terminal:\n%s", narrow)
+	}
+	if !strings.Contains(wide, longName) {
+		t.Errorf("expected the full node name to fit on a wide terminal:\n%s", wide)
+	}
+}
+
 func TestDensityCardWidthsAreOrdered(t *testing.T) {
 	if DensityCompact.CardWidth() >= DensityNormal.CardWidth() ||
 		DensityNormal.CardWidth() >= DensityWide.CardWidth() {
