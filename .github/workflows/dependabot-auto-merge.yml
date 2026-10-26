@@ -1,0 +1,33 @@
+# Queues a Dependabot PR to merge itself once the branch ruleset's required
+# checks (lint, test) pass. Copied from flightdeck; rebase because this repo
+# only allows rebase merges.
+#
+# Uses the built-in GITHUB_TOKEN, so the merge does NOT trigger other
+# workflows (including the push run on main).
+#
+# The ruleset is what makes `--auto` wait for the checks instead of merging
+# immediately, and the repo setting "Allow auto-merge" must be on.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # The PR's author, not github.actor: a human re-running the job must not
+    # turn their run into an auto-merge.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      - name: Queue the merge for when the required checks pass
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --rebase "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
